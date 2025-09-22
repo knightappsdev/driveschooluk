@@ -1,0 +1,30 @@
+{
+  "name": "driveconnect-uk-database",
+  "version": "1.0.0",
+  "description": "Database layer for DriveConnect UK",
+  "main": "config/database.js",
+  "scripts": {
+    "setup": "node setup.js setup",
+    "reset": "node setup.js reset",
+    "seed": "node setup.js seed",
+    "verify": "node setup.js verify",
+    "info": "node setup.js info",
+    "test": "node test/database.test.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.6.5",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "keywords": [
+    "mysql",
+    "database",
+    "driving-school",
+    "nodejs"
+  ],
+  "author": "DriveConnect UK",
+  "license": "MIT"
+}

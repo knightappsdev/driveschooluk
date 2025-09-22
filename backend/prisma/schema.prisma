@@ -1,0 +1,632 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  INSTRUCTOR
+  LEARNER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+enum LessonStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+model User {
+  id                String     @id @default(cuid())
+  email             String     @unique
+  password          String
+  role              UserRole   @default(LEARNER)
+  status            UserStatus @default(PENDING_VERIFICATION)
+  firstName         String
+  lastName          String
+  phone             String?
+  profileImage      String?
+  emailVerified     Boolean    @default(false)
+  emailVerifiedAt   DateTime?
+  passwordResetToken String?
+  passwordResetExpires DateTime?
+  lastLoginAt       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // Relationships
+  learnerProfile    LearnerProfile?
+  instructorProfile InstructorProfile?
+  assignedByAssignments Assignment[] @relation("AssignmentAssignedBy")
+  notifications     Notification[]
+  formSubmissions   FormSubmission[] @relation("FormSubmissionUser")
+  processedSubmissions FormSubmission[] @relation("FormSubmissionProcessor")
+  auditLogs         AuditLog[]
+  uploadedMaterials LearningMaterial[]
+  createdTests      TheoryTest[]
+
+  @@map("users")
+}
+
+model LearnerProfile {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  dateOfBirth       DateTime?
+  address           String?
+  emergencyContact  String?
+  emergencyPhone    String?
+  licenseNumber     String?   @unique
+  theoryTestPassed  Boolean   @default(false)
+  theoryTestDate    DateTime?
+  practicalTestPassed Boolean @default(false)
+  practicalTestDate DateTime?
+  medicalConditions String?
+  notes             String?   @db.Text
+  startDate         DateTime? @default(now())
+  completionDate    DateTime?
+  totalLessons      Int       @default(0)
+  completedLessons  Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relationships
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments       Assignment[]
+  lessons           Lesson[]
+  enrollments       CourseEnrollment[]
+  lessonProgress    LessonProgress[]
+  testSessions      TestSession[]
+  testAnalytics     TestAnalytics[]
+  bookings          LessonBooking[]
+  performanceReports PerformanceReport[]
+
+  @@map("learner_profiles")
+}
+
+model InstructorProfile {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  instructorLicense String    @unique
+  vehicleType       String?
+  experience        Int?      // Years of experience
+  specializations   String?   @db.Text // JSON array of specializations
+  availabilityNotes String?   @db.Text // JSON object for availability schedule
+  hourlyRate        Decimal?  @db.Decimal(10, 2)
+  bio               String?   @db.Text
+  qualifications    String?   @db.Text
+  rating            Decimal?  @db.Decimal(3, 2)
+  totalStudents     Int       @default(0)
+  activeStudents    Int       @default(0)
+  completedStudents Int       @default(0)
+  isActive          Boolean   @default(true)
+  hireDate          DateTime? @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relationships
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments       Assignment[]
+  lessons           Lesson[]
+  courses           Course[]
+  availabilitySlots InstructorAvailability[]
+  bookings          LessonBooking[]
+  performanceReports PerformanceReport[]
+
+  @@map("instructor_profiles")
+}
+
+model Assignment {
+  id                String          @id @default(cuid())
+  learnerId         String
+  instructorId      String
+  assignedBy        String          // Super Admin who made the assignment
+  status            AssignmentStatus @default(ACTIVE)
+  startDate         DateTime        @default(now())
+  endDate           DateTime?
+  notes             String?         @db.Text
+  priority          String?         // HIGH, MEDIUM, LOW
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Relationships
+  learner           LearnerProfile  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  instructor        InstructorProfile @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  assignedByUser    User            @relation("AssignmentAssignedBy", fields: [assignedBy], references: [id])
+  lessons           Lesson[]
+
+  @@unique([learnerId, instructorId, status])
+  @@map("assignments")
+}
+
+model Lesson {
+  id                String       @id @default(cuid())
+  assignmentId      String?
+  learnerId         String
+  instructorId      String
+  title             String
+  description       String?      @db.Text
+  scheduledAt       DateTime
+  duration          Int          // Duration in minutes
+  status            LessonStatus @default(SCHEDULED)
+  location          String?
+  notes             String?      @db.Text
+  instructorNotes   String?      @db.Text
+  rating            Int?         // 1-5 rating
+  feedback          String?      @db.Text
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  // Relationships
+  assignment        Assignment?  @relation(fields: [assignmentId], references: [id])
+  learner           LearnerProfile @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  instructor        InstructorProfile @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  booking           LessonBooking?
+
+  @@map("lessons")
+}
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  title       String
+  message     String            @db.Text
+  type        String            // ASSIGNMENT, LESSON, SYSTEM, etc.
+  status      NotificationStatus @default(UNREAD)
+  metadata    String?           @db.Text // JSON for additional data
+  actionUrl   String?
+  expiresAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relationships
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model FormSubmission {
+  id          String   @id @default(cuid())
+  userId      String?
+  type        String   // INQUIRY, REGISTRATION, CONTACT, etc.
+  formData    String   @db.Text // JSON data
+  status      String   @default("NEW") // NEW, CONTACTED, CONVERTED, ARCHIVED
+  source      String?  // Website page where form was submitted
+  ipAddress   String?
+  userAgent   String?  @db.Text
+  notes       String?  @db.Text
+  processedBy String?
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  user        User?    @relation("FormSubmissionUser", fields: [userId], references: [id])
+  processor   User?    @relation("FormSubmissionProcessor", fields: [processedBy], references: [id])
+
+  @@map("form_submissions")
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?  @db.Text
+  category    String?  // GENERAL, EMAIL, SECURITY, etc.
+  dataType    String   @default("STRING") // STRING, NUMBER, BOOLEAN, JSON
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model ContentBlock {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  title       String
+  content     String   @db.Text
+  contentType String   @default("HTML") // HTML, MARKDOWN, JSON
+  category    String?  // HERO, FEATURES, TESTIMONIALS, etc.
+  isActive    Boolean  @default(true)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("content_blocks")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String   // CREATE, UPDATE, DELETE, LOGIN, etc.
+  entity      String   // USER, ASSIGNMENT, LESSON, etc.
+  entityId    String?
+  oldValues   String?  @db.Text // JSON
+  newValues   String?  @db.Text // JSON
+  ipAddress   String?
+  userAgent   String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  // Relationships
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// Learning Management System Models
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LessonType {
+  PRACTICAL
+  THEORY
+  ASSESSMENT
+  MOCK_TEST
+}
+
+enum TestStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  EXPIRED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  HAZARD_PERCEPTION
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+model Course {
+  id          String      @id @default(cuid())
+  title       String
+  description String?     @db.Text
+  category    String      // THEORY, PRACTICAL, COMBINED
+  level       DifficultyLevel @default(BEGINNER)
+  duration    Int?        // Expected duration in hours
+  status      CourseStatus @default(DRAFT)
+  thumbnail   String?
+  price       Decimal?    @db.Decimal(10, 2)
+  isDefault   Boolean     @default(false)
+  instructorId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relationships
+  instructor  InstructorProfile? @relation(fields: [instructorId], references: [id])
+  lessons     CourseLesson[]
+  materials   LearningMaterial[]
+  enrollments CourseEnrollment[]
+
+  @@map("courses")
+}
+
+model CourseLesson {
+  id          String   @id @default(cuid())
+  courseId    String
+  title       String
+  description String?  @db.Text
+  type        LessonType @default(PRACTICAL)
+  order       Int
+  duration    Int?     // Duration in minutes
+  isRequired  Boolean  @default(true)
+  content     String?  @db.Text // Lesson content/objectives
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  materials   LearningMaterial[]
+  progress    LessonProgress[]
+
+  @@map("course_lessons")
+}
+
+model LearningMaterial {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  type        String   // PDF, VIDEO, AUDIO, IMAGE, LINK
+  fileUrl     String?
+  content     String?  @db.Text // For text content
+  fileSize    Int?     // File size in bytes
+  duration    Int?     // For video/audio in seconds
+  order       Int      @default(0)
+  isRequired  Boolean  @default(false)
+  courseId    String?
+  lessonId    String?
+  uploadedBy  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  course      Course?       @relation(fields: [courseId], references: [id])
+  lesson      CourseLesson? @relation(fields: [lessonId], references: [id])
+  uploader    User          @relation(fields: [uploadedBy], references: [id])
+
+  @@map("learning_materials")
+}
+
+model CourseEnrollment {
+  id             String    @id @default(cuid())
+  courseId       String
+  learnerId      String
+  enrolledAt     DateTime  @default(now())
+  completedAt    DateTime?
+  progress       Float     @default(0) // 0-100 percentage
+  currentLessonId String?
+  isActive       Boolean   @default(true)
+  certificateUrl String?
+
+  // Relationships
+  course         Course         @relation(fields: [courseId], references: [id])
+  learner        LearnerProfile @relation(fields: [learnerId], references: [id])
+  progress_records LessonProgress[]
+
+  @@unique([courseId, learnerId])
+  @@map("course_enrollments")
+}
+
+model LessonProgress {
+  id             String    @id @default(cuid())
+  enrollmentId   String
+  lessonId       String
+  learnerId      String
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  timeSpent      Int       @default(0) // Time in minutes
+  score          Float?    // For assessments
+  notes          String?   @db.Text
+  isCompleted    Boolean   @default(false)
+
+  // Relationships
+  enrollment     CourseEnrollment @relation(fields: [enrollmentId], references: [id])
+  lesson         CourseLesson     @relation(fields: [lessonId], references: [id])
+  learner        LearnerProfile   @relation(fields: [learnerId], references: [id])
+
+  @@unique([enrollmentId, lessonId])
+  @@map("lesson_progress")
+}
+
+// Theory Test System Models
+model TestCategory {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?    @db.Text
+  isActive    Boolean    @default(true)
+  order       Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relationships
+  questions   TestQuestion[]
+  tests       TheoryTest[]
+
+  @@map("test_categories")
+}
+
+model TestQuestion {
+  id          String        @id @default(cuid())
+  categoryId  String
+  type        QuestionType  @default(MULTIPLE_CHOICE)
+  question    String        @db.Text
+  options     String        @db.Text // JSON array of options
+  correctAnswer String      // Correct answer key
+  explanation String?       @db.Text
+  imageUrl    String?
+  videoUrl    String?
+  difficulty  DifficultyLevel @default(BEGINNER)
+  tags        String?       @db.Text // JSON array of tags
+  isActive    Boolean       @default(true)
+  timesUsed   Int           @default(0)
+  successRate Float?        @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relationships
+  category    TestCategory  @relation(fields: [categoryId], references: [id])
+  testQuestions TestQuestionMapping[]
+  answers     TestAnswer[]
+
+  @@map("test_questions")
+}
+
+model TheoryTest {
+  id          String     @id @default(cuid())
+  title       String
+  description String?    @db.Text
+  categoryId  String?
+  type        String     // PRACTICE, MOCK_EXAM, OFFICIAL
+  timeLimit   Int        // Time limit in minutes
+  passingScore Int       // Minimum score to pass
+  totalQuestions Int
+  isRandomized Boolean   @default(true)
+  isActive    Boolean    @default(true)
+  createdBy   String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relationships
+  category    TestCategory? @relation(fields: [categoryId], references: [id])
+  creator     User          @relation(fields: [createdBy], references: [id])
+  questions   TestQuestionMapping[]
+  sessions    TestSession[]
+
+  @@map("theory_tests")
+}
+
+model TestQuestionMapping {
+  id         String       @id @default(cuid())
+  testId     String
+  questionId String
+  order      Int
+  weight     Float        @default(1) // Question weight for scoring
+
+  // Relationships
+  test       TheoryTest   @relation(fields: [testId], references: [id], onDelete: Cascade)
+  question   TestQuestion @relation(fields: [questionId], references: [id])
+
+  @@unique([testId, questionId])
+  @@map("test_question_mapping")
+}
+
+model TestSession {
+  id          String     @id @default(cuid())
+  testId      String
+  learnerId   String
+  startedAt   DateTime   @default(now())
+  completedAt DateTime?
+  timeSpent   Int?       // Time spent in minutes
+  score       Float?     // Final score
+  passed      Boolean?
+  status      TestStatus @default(NOT_STARTED)
+  currentQuestionIndex Int @default(0)
+  sessionData String?    @db.Text // JSON for session state
+
+  // Relationships
+  test        TheoryTest     @relation(fields: [testId], references: [id])
+  learner     LearnerProfile @relation(fields: [learnerId], references: [id])
+  answers     TestAnswer[]
+  analytics   TestAnalytics?
+
+  @@map("test_sessions")
+}
+
+model TestAnswer {
+  id          String     @id @default(cuid())
+  sessionId   String
+  questionId  String
+  answer      String     // Selected answer
+  isCorrect   Boolean
+  timeSpent   Int?       // Time spent on this question in seconds
+  answeredAt  DateTime   @default(now())
+
+  // Relationships
+  session     TestSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question    TestQuestion @relation(fields: [questionId], references: [id])
+
+  @@unique([sessionId, questionId])
+  @@map("test_answers")
+}
+
+model TestAnalytics {
+  id                String      @id @default(cuid())
+  sessionId         String      @unique
+  learnerId         String
+  weakCategories    String?     @db.Text // JSON array of weak category IDs
+  strongCategories  String?     @db.Text // JSON array of strong category IDs
+  timePerQuestion   Float?      // Average time per question
+  accuracyRate      Float?      // Overall accuracy percentage
+  improvementAreas  String?     @db.Text // JSON array of improvement suggestions
+  createdAt         DateTime    @default(now())
+
+  // Relationships
+  session           TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  learner           LearnerProfile @relation(fields: [learnerId], references: [id])
+
+  @@map("test_analytics")
+}
+
+// Calendar and Booking System
+model InstructorAvailability {
+  id           String   @id @default(cuid())
+  instructorId String
+  dayOfWeek    Int      // 0-6 (Sunday-Saturday)
+  startTime    String   // HH:MM format
+  endTime      String   // HH:MM format
+  isRecurring  Boolean  @default(true)
+  specificDate DateTime? // For one-time availability
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relationships
+  instructor   InstructorProfile @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  @@map("instructor_availability")
+}
+
+model LessonBooking {
+  id           String    @id @default(cuid())
+  learnerId    String
+  instructorId String
+  lessonId     String?   @unique // Optional lesson ID for confirmed bookings
+  lessonType   LessonType @default(PRACTICAL)
+  scheduledAt  DateTime
+  duration     Int       @default(60) // Duration in minutes
+  status       String    @default("PENDING") // PENDING, CONFIRMED, CANCELLED, COMPLETED
+  location     String?
+  notes        String?   @db.Text
+  reminderSent Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relationships
+  learner      LearnerProfile    @relation(fields: [learnerId], references: [id])
+  instructor   InstructorProfile @relation(fields: [instructorId], references: [id])
+  lesson       Lesson?           @relation(fields: [lessonId], references: [id])
+
+  @@map("lesson_bookings")
+}
+
+// Performance Reports
+model PerformanceReport {
+  id          String   @id @default(cuid())
+  learnerId   String
+  instructorId String?
+  reportType  String   // WEEKLY, MONTHLY, PROGRESS, FINAL
+  dateFrom    DateTime
+  dateTo      DateTime
+  totalLessons Int     @default(0)
+  completedLessons Int @default(0)
+  averageScore Float?
+  strengths   String?  @db.Text // JSON array
+  weaknesses  String?  @db.Text // JSON array
+  recommendations String? @db.Text // JSON array
+  overallGrade String?
+  createdAt   DateTime @default(now())
+
+  // Relationships
+  learner     LearnerProfile    @relation(fields: [learnerId], references: [id])
+  instructor  InstructorProfile? @relation(fields: [instructorId], references: [id])
+
+  @@map("performance_reports")
+}
