@@ -34,6 +34,26 @@ export class SocketServer {
     logger.info('📡 Socket.IO server initialized');
   }
 
+  // Send notification to specific user
+  sendToUser(userId: string, event: string, data: any) {
+    this.io.to(`user-${userId}`).emit(event, data);
+  }
+
+  // Send notification to all users with specific role
+  sendToRole(role: string, event: string, data: any) {
+    this.io.to(`role-${role}`).emit(event, data);
+  }
+
+  // Send broadcast notification
+  sendBroadcast(event: string, data: any) {
+    this.io.emit(event, data);
+  }
+
+  // Send to specific room
+  sendToRoom(room: string, event: string, data: any) {
+    this.io.to(room).emit(event, data);
+  }
+
   private setupAuthentication() {
     this.io.use(async (socket: any, next) => {
       try {
@@ -270,7 +290,7 @@ export class SocketServer {
 
         await db.notification.update({
           where: { id: notificationId },
-          data: { status: 'READ' },
+          data: { read: true, readAt: new Date() },
         });
 
         socket.emit('notification-read', { notificationId });

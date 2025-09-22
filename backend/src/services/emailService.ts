@@ -327,6 +327,76 @@ export class EmailService {
       throw error;
     }
   }
+
+  async sendNotificationEmail(
+    email: string, 
+    firstName: string, 
+    title: string, 
+    message: string, 
+    actionUrl?: string
+  ): Promise<void> {
+    try {
+      const mailOptions = {
+        from: process.env['FROM_EMAIL'] || 'noreply@driveconnectuk.com',
+        to: email,
+        subject: `DriveConnect UK - ${title}`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              .container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; }
+              .header { background-color: #8B5CF6; color: white; padding: 20px; text-align: center; }
+              .content { padding: 20px; }
+              .message-box { background-color: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0; }
+              .button { 
+                display: inline-block; 
+                background-color: #8B5CF6; 
+                color: white; 
+                padding: 12px 24px; 
+                text-decoration: none; 
+                border-radius: 5px; 
+                margin: 20px 0; 
+              }
+              .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>🔔 DriveConnect UK Notification</h1>
+              </div>
+              <div class="content">
+                <h2>Hi ${firstName},</h2>
+                <h3>${title}</h3>
+                
+                <div class="message-box">
+                  <p>${message}</p>
+                </div>
+                
+                ${actionUrl ? `<a href="${actionUrl}" class="button">View Details</a>` : ''}
+                
+                <p>This is an automated notification from DriveConnect UK.</p>
+                
+                <p>Best regards,</p>
+                <p>The DriveConnect UK Team</p>
+              </div>
+              <div class="footer">
+                <p>© 2024 DriveConnect UK. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      logger.info(`Notification email sent to: ${email}`);
+    } catch (error) {
+      logger.error(`Failed to send notification email to ${email}:`, error);
+      throw error;
+    }
+  }
 }
 
 export const emailService = new EmailService();

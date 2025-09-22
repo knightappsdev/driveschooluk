@@ -14,6 +14,7 @@ import formSubmissionRoutes from './routes/formSubmissions';
 import uploadRoutes from './routes/upload';
 import bookingRoutes from './routes/bookings';
 import calendarRoutes from './routes/calendar';
+import notificationRoutes from './routes/notifications';
 // TODO: Fix TypeScript errors in new controllers
 // import userRoutes from './routes/users';
 // import bookingRoutes from './routes/bookings';
@@ -96,6 +97,7 @@ app.use('/api/form-submissions', formSubmissionRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/notifications', notificationRoutes);
 // TODO: Enable after fixing TypeScript errors
 // app.use('/api/users', userRoutes);
 // app.use('/api/bookings', bookingRoutes);
@@ -167,6 +169,11 @@ process.on('unhandledRejection', (reason, promise) => {
 const socketServer = initializeSocketServer(server);
 logger.info('📡 Socket.IO server initialized with real-time capabilities');
 logger.info(`📡 Socket.IO server status: ${socketServer ? 'Ready' : 'Failed'}`);
+
+// Initialize notification service with Socket.IO
+import { notificationService } from './services/notificationService';
+notificationService.setSocketServer(socketServer);
+logger.info('🔔 Notification service initialized with Socket.IO integration');
 
 // Start server
 server.listen(PORT, () => {

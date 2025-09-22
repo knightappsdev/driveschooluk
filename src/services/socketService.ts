@@ -4,8 +4,12 @@ interface NotificationData {
   id: string;
   title: string;
   message: string;
-  type: 'success' | 'error' | 'warning' | 'info';
+  type: 'success' | 'error' | 'warning' | 'info' | 'lesson_reminder' | 'booking_confirmation' | 'system_announcement';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  actionUrl?: string;
+  metadata?: Record<string, any>;
   userId?: string;
+  createdAt: string;
 }
 
 interface SocketEvent {
@@ -19,6 +23,7 @@ class SocketService {
   private isConnected: boolean = false;
   private authToken: string | null = null;
   private eventLog: SocketEvent[] = [];
+  private notificationCallbacks: ((notification: NotificationData) => void)[] = [];
 
   async connect(token?: string): Promise<void> {
     try {
@@ -100,6 +105,18 @@ class SocketService {
     this.socket.on('reconnect_error', (error) => {
       this.logEvent('reconnect_error', error);
       console.error('🔄 Socket.IO reconnection error:', error);
+    });
+
+    // Handle notification events
+    this.socket.on('notification', (notificationData: NotificationData) => {
+      console.log('🔔 Notification received:', notificationData);
+      this.notificationCallbacks.forEach(callback => {
+        try {
+          callback(notificationData);
+        } catch (error) {
+          console.error('Error in notification callback:', error);
+        }
+      });
     });
 
     // Log all incoming events for debugging
@@ -238,11 +255,38 @@ class SocketService {
       title: 'Lesson Reminder',
       message: lessonDetails,
       type: 'info',
-      userId
+      priority: 'medium',
+      userId,
+      createdAt: new Date().toISOString()
     };
 
     // Emit to server instead of local simulation
     this.emit('test_notification', notification);
+  }
+
+  // Notification subscription methods
+  subscribeToNotifications(callback: (notification: NotificationData) => void): void {
+    this.notificationCallbacks.push(callback);
+    console.log('🔔 Subscribed to notifications');
+  }
+
+  unsubscribeFromNotifications(callback: (notification: NotificationData) => void): void {
+    const index = this.notificationCallbacks.indexOf(callback);
+    if (index > -1) {
+      this.notificationCallbacks.splice(index, 1);
+      console.log('🔕 Unsubscribed from notifications');
+    }
+  }
+
+  // Clear all notification callbacks
+  clearNotificationSubscriptions(): void {
+    this.notificationCallbacks = [];
+    console.log('🔕 Cleared all notification subscriptions');
+  }
+
+  // Send notification acknowledgment
+  acknowledgeNotification(notificationId: string): void {
+    this.emit('notification_acknowledged', { id: notificationId });
   }
 }
 

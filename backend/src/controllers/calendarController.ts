@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { notificationService } from '../services/notificationService';
+import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
@@ -155,6 +157,17 @@ export const setInstructorAvailability = async (req: Request, res: Response): Pr
         isActive: true
       }
     });
+
+    // Send availability change notification
+    try {
+      await notificationService.sendAvailabilityChangeNotification(
+        instructorId, 
+        { dayOfWeek, startTime, endTime, isRecurring }
+      );
+      logger.info(`Availability change notifications sent for instructor: ${instructorId}`);
+    } catch (notificationError) {
+      logger.error('Failed to send availability change notifications:', notificationError);
+    }
 
     res.status(201).json({
       message: 'Availability set successfully',

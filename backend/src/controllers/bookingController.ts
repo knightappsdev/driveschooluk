@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { notificationService } from '../services/notificationService';
+import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
@@ -75,6 +77,14 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
         }
       }
     });
+
+    // Send booking confirmation notifications
+    try {
+      await notificationService.sendBookingConfirmation(booking.id);
+      logger.info(`Booking confirmation notifications sent for booking: ${booking.id}`);
+    } catch (notificationError) {
+      logger.error('Failed to send booking confirmation notifications:', notificationError);
+    }
 
     res.status(201).json({
       message: 'Booking created successfully',

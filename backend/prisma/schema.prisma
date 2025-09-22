@@ -67,6 +67,7 @@ model User {
   instructorProfile InstructorProfile?
   assignedByAssignments Assignment[] @relation("AssignmentAssignedBy")
   notifications     Notification[]
+  scheduledNotifications ScheduledNotification[]
   formSubmissions   FormSubmission[] @relation("FormSubmissionUser")
   processedSubmissions FormSubmission[] @relation("FormSubmissionProcessor")
   auditLogs         AuditLog[]
@@ -107,6 +108,11 @@ model LearnerProfile {
   testAnalytics     TestAnalytics[]
   bookings          LessonBooking[]
   performanceReports PerformanceReport[]
+  skillAssessments SkillAssessment[]
+  objectiveProgress ObjectiveProgress[]
+  progressMilestones ProgressMilestone[]
+  learningPaths   LearningPath[]
+  progressSnapshots ProgressSnapshot[]
 
   @@map("learner_profiles")
 }
@@ -139,6 +145,7 @@ model InstructorProfile {
   availabilitySlots InstructorAvailability[]
   bookings          LessonBooking[]
   performanceReports PerformanceReport[]
+  skillAssessments SkillAssessment[]
 
   @@map("instructor_profiles")
 }
@@ -189,26 +196,31 @@ model Lesson {
   learner           LearnerProfile @relation(fields: [learnerId], references: [id], onDelete: Cascade)
   instructor        InstructorProfile @relation(fields: [instructorId], references: [id], onDelete: Cascade)
   booking           LessonBooking?
+  skillAssessments SkillAssessment[]
+  objectives      LessonObjective[]
 
   @@map("lessons")
 }
 
 model Notification {
-  id          String            @id @default(cuid())
+  id          String   @id @default(cuid())
   userId      String
   title       String
-  message     String            @db.Text
-  type        String            // ASSIGNMENT, LESSON, SYSTEM, etc.
-  status      NotificationStatus @default(UNREAD)
-  metadata    String?           @db.Text // JSON for additional data
+  message     String   @db.Text
+  type        String   // LESSON_REMINDER, BOOKING_CONFIRMATION, ASSIGNMENT, LESSON, SYSTEM, etc.
+  priority    String   @default("medium") // low, medium, high, urgent
+  read        Boolean  @default(false)
+  readAt      DateTime?
+  metadata    String?  @db.Text // JSON for additional data
   actionUrl   String?
   expiresAt   DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relationships
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, createdAt])
   @@map("notifications")
 }
 
@@ -629,4 +641,185 @@ model PerformanceReport {
   instructor  InstructorProfile? @relation(fields: [instructorId], references: [id])
 
   @@map("performance_reports")
+}
+
+// Enhanced Progress Tracking Models
+model SkillCompetency {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  category    String   // VEHICLE_CONTROL, HAZARD_AWARENESS, ROAD_POSITIONING, etc.
+  level       DifficultyLevel @default(BEGINNER)
+  isCore      Boolean  @default(true) // Core DVSA competencies
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  assessments SkillAssessment[]
+  objectives  LessonObjective[]
+
+  @@map("skill_competencies")
+}
+
+model SkillAssessment {
+  id            String   @id @default(cuid())
+  learnerId     String
+  instructorId  String
+  competencyId  String
+  lessonId      String?
+  score         Float    // 1-5 scale (DVSA standard)
+  feedback      String?  @db.Text
+  assessedAt    DateTime @default(now())
+  improvementPlan String? @db.Text
+  nextReviewDate DateTime?
+
+  // Relationships
+  learner       LearnerProfile    @relation(fields: [learnerId], references: [id])
+  instructor    InstructorProfile @relation(fields: [instructorId], references: [id])
+  competency    SkillCompetency   @relation(fields: [competencyId], references: [id])
+  lesson        Lesson?           @relation(fields: [lessonId], references: [id])
+
+  @@unique([learnerId, competencyId, assessedAt])
+  @@map("skill_assessments")
+}
+
+model LessonObjective {
+  id           String   @id @default(cuid())
+  lessonId     String?
+  competencyId String
+  title        String
+  description  String?  @db.Text
+  isCompleted  Boolean  @default(false)
+  completedAt  DateTime?
+  order        Int      @default(0)
+
+  // Relationships
+  lesson       Lesson?         @relation(fields: [lessonId], references: [id])
+  competency   SkillCompetency @relation(fields: [competencyId], references: [id])
+  progress     ObjectiveProgress[]
+
+  @@map("lesson_objectives")
+}
+
+model ObjectiveProgress {
+  id          String   @id @default(cuid())
+  objectiveId String
+  learnerId   String
+  status      String   @default("NOT_STARTED") // NOT_STARTED, IN_PROGRESS, COMPLETED, NEEDS_IMPROVEMENT
+  attempts    Int      @default(0)
+  bestScore   Float?
+  lastAttempt DateTime?
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  objective   LessonObjective @relation(fields: [objectiveId], references: [id])
+  learner     LearnerProfile  @relation(fields: [learnerId], references: [id])
+
+  @@unique([objectiveId, learnerId])
+  @@map("objective_progress")
+}
+
+model ProgressMilestone {
+  id          String   @id @default(cuid())
+  learnerId   String
+  type        String   // FIRST_LESSON, THEORY_PASSED, MOCK_TEST_PASSED, READY_FOR_TEST, etc.
+  title       String
+  description String?  @db.Text
+  achievedAt  DateTime @default(now())
+  metadata    String?  @db.Text // JSON for additional milestone data
+
+  // Relationships
+  learner     LearnerProfile @relation(fields: [learnerId], references: [id])
+
+  @@map("progress_milestones")
+}
+
+model LearningPath {
+  id          String   @id @default(cuid())
+  learnerId   String
+  title       String
+  description String?  @db.Text
+  totalSteps  Int      @default(0)
+  completedSteps Int   @default(0)
+  estimatedDuration Int? // In hours
+  startedAt   DateTime @default(now())
+  targetDate  DateTime?
+  completedAt DateTime?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  learner     LearnerProfile @relation(fields: [learnerId], references: [id])
+  steps       PathStep[]
+
+  @@map("learning_paths")
+}
+
+model PathStep {
+  id         String   @id @default(cuid())
+  pathId     String
+  title      String
+  description String? @db.Text
+  type       String   // LESSON, THEORY_STUDY, PRACTICE_TEST, ASSESSMENT
+  order      Int
+  isCompleted Boolean @default(false)
+  completedAt DateTime?
+  prerequisites String? @db.Text // JSON array of required step IDs
+  estimatedTime Int?   // Minutes required
+  resourceIds String? @db.Text // JSON array of learning material IDs
+
+  // Relationships
+  path       LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+
+  @@map("path_steps")
+}
+
+model ProgressSnapshot {
+  id                String   @id @default(cuid())
+  learnerId         String
+  snapshotDate      DateTime @default(now())
+  totalLessons      Int      @default(0)
+  completedLessons  Int      @default(0)
+  averageScore      Float?
+  competencyScores  String?  @db.Text // JSON object with competency scores
+  strengths         String?  @db.Text // JSON array
+  improvements      String?  @db.Text // JSON array
+  nextMilestone     String?
+  readinessLevel    Float?   // Percentage ready for driving test
+  predictedTestDate DateTime?
+  createdAt         DateTime @default(now())
+
+  // Relationships
+  learner           LearnerProfile @relation(fields: [learnerId], references: [id])
+
+  @@map("progress_snapshots")
+}
+
+// Scheduled Notification Model
+model ScheduledNotification {
+  id          String   @id @default(cuid())
+  type        String   // LESSON_REMINDER, etc.
+  title       String
+  message     String   @db.Text
+  userId      String
+  scheduledAt DateTime
+  actionUrl   String?
+  metadata    String?  @db.Text // JSON data
+  priority    String   @default("medium")
+  sent        Boolean  @default(false)
+  sentAt      DateTime?
+  cancelled   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledAt, sent])
+  @@index([userId])
+  @@map("scheduled_notifications")
 }
